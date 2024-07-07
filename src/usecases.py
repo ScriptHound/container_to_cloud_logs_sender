@@ -33,7 +33,7 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
     def get_logs_from_container(self) -> Generator[bytes, None, None]:
         return self.container_service.get_logs()
 
-    def get_logs_from_cloud(self, start_time: int, end_time: int) -> str:
+    def get_logs_from_cloud(self, start_time: float, end_time: float) -> str:
         return self.cloud_service.get_logs(int(start_time * 1000), int(end_time * 1000))
 
     def run_bash_command_on_container(self, bash_command: str) -> str:

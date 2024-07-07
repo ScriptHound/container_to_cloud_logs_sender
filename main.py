@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import logging
 
 from src.services import AwsCloudWatchService, DockerDeploymentService
@@ -21,16 +22,21 @@ def get_cli_arguments():
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     arguments = get_cli_arguments()
     validated_arguments = ProgramArguments(**vars(arguments))
     docker_arguments = DockerCredentials(**vars(arguments))
 
     aws_cloudwatch_service = AwsCloudWatchService(validated_arguments)
     container_service = DockerDeploymentService(docker_arguments)
+    logs_monitoring_usecase = AwsCloudWatchUseCase(container_service, aws_cloudwatch_service, validated_arguments)
 
-    result = aws_cloudwatch_service.send_logs("testing probe")
-    if not result:
-        logging.error("Failed to send logs to cloudwatch")
+    start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).timestamp()
+    logs_monitoring_usecase.loop("bash:latest", 'bash -c "echo hello"')
+    end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).timestamp()
+    logs = logs_monitoring_usecase.get_logs_from_cloud(start_time, end_time)
+    logging.info(logs)
 
 
 if __name__ == "__main__":

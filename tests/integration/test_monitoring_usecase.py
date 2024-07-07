@@ -7,5 +7,3 @@ def test_loop(dev_aws_cloudwatch_usecase):
     end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).timestamp()
     logs = dev_aws_cloudwatch_usecase.get_logs_from_cloud(start_time, end_time)
     assert logs != []
-
-
