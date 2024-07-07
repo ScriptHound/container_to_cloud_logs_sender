@@ -19,8 +19,8 @@ def integration_program_arguments():
     return ProgramArguments(
         docker_image="bash:latest",
         bash_command="echo hello",
-        aws_cloudwatch_group="test-task-group-1",
-        aws_cloudwatch_stream="test-task-stream-1",
+        aws_cloudwatch_group="test-scripthound-group-1",
+        aws_cloudwatch_stream="test-scripthound-stream-1",
         aws_access_key_id=os.getenv("LOGS_MONITORING_AWS_ACCESS_KEY_TEST"),
         aws_secret_key=os.getenv("LOGS_MONITORING_AWS_SECRET_KEY_TEST"),
         aws_region="us-west-2"
@@ -52,6 +52,9 @@ def dev_aws_cloudwatch_usecase(dev_integration_aws_cloudwatch, dev_integration_c
 @pytest.fixture
 def mock_cloudwatch_service():
     class MockCloudWatchService(ICloudMonitoringService):
+        def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
+            return "test logs"
+
         def __init__(self, arguments: ProgramArguments):
             self.aws_access_key_id = arguments.aws_access_key_id
             self.aws_secret_key = arguments.aws_secret_key
@@ -68,6 +71,18 @@ def mock_cloudwatch_service():
 @pytest.fixture
 def mock_container_service():
     class MockContainerService(IContainerDeploymentService):
+        def login(self):
+            pass
+
+        def remove_container(self):
+            pass
+
+        def stop_container(self):
+            pass
+
+        def container_is_running(self) -> bool:
+            pass
+
         def __init__(self, credentials: Optional[DockerCredentials]):
             self.docker_username = credentials.username or ""
             self.docker_password = credentials.password or ""

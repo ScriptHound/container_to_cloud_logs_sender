@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Generator, Optional
@@ -9,6 +10,7 @@ from botocore.client import BaseClient
 from docker import DockerClient
 from docker.models.containers import Container
 
+from src.erorrs import CloudClientQueryError, CloudServerQueryError
 from src.validation import DockerCredentials, ProgramArguments
 
 
@@ -27,7 +29,7 @@ class IContainerDeploymentService(ABC):
         pass
 
     @abstractmethod
-    def run_container(self, command: Optional[str]) -> None:
+    def run_container(self, command: Optional[str] = None) -> None:
         pass
 
     @abstractmethod
@@ -93,7 +95,7 @@ class DockerDeploymentService(IContainerDeploymentService):
             logging.info(f"{image_name} already exists")
         self.image_name = image_name
 
-    def run_container(self, command: Optional[str]) -> None:
+    def run_container(self, command: Optional[str] = None) -> None:
         logging.info(f"starting {self.image_name} with command {command}")
         self.time_started = datetime.now(tz=timezone.utc)
         self.container = self.client.containers.run(image=self.image_name, command=command or None, detach=True)
@@ -114,7 +116,14 @@ class DockerDeploymentService(IContainerDeploymentService):
 
 
 class ICloudMonitoringService(ABC):
+
+    @abstractmethod
     def send_logs(self, logs: str) -> bool:
+        pass
+
+    # arguments really depend on concrete cloud provider
+    @abstractmethod
+    def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
         pass
 
 
@@ -125,20 +134,68 @@ class AwsCloudWatchService(ICloudMonitoringService):
         self.aws_region = arguments.aws_region
         self.cloudwatch_group = arguments.aws_cloudwatch_group
         self.cloudwatch_stream = arguments.aws_cloudwatch_stream
+        self.client: Optional[BaseClient] = None
 
-    def send_logs(self, logs: str) -> bool:
-        client: BaseClient = boto3.client(
+    def login(self):
+        self.client: BaseClient = boto3.client(
             "logs",
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_key,
             region_name=self.aws_region
         )
-        response = client.put_log_events(
+
+        if not self.client.describe_log_groups(logGroupNamePrefix=self.cloudwatch_group)["logGroups"]:
+            self.client.create_log_group(logGroupName=self.cloudwatch_group)
+
+        if not self.client.describe_log_streams(
+                logGroupName=self.cloudwatch_group,
+                logStreamNamePrefix=self.cloudwatch_stream)["logStreams"]:
+            self.client.create_log_stream(logGroupName=self.cloudwatch_group, logStreamName=self.cloudwatch_stream)
+
+        self.client.put_retention_policy(
+            logGroupName=self.cloudwatch_group,
+            retentionInDays=3
+        )
+
+    def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
+        self.login()
+        response = self.client.start_query(
+            logGroupName=self.cloudwatch_group,
+            queryString="fields @timestamp, @message | sort @timestamp asc",
+            limit=max_logs,
+            startTime=round(start_time),
+            endTime=round(end_time)
+        )
+
+        if response["ResponseMetadata"]["HTTPStatusCode"] // 100 == 4:
+            logging.error("Client side error while attempting to get logs from cloudwatch")
+            raise CloudClientQueryError("Something went wrong on client side")
+        elif response["ResponseMetadata"]["HTTPStatusCode"] // 100 == 5:
+            logging.error("Server side error while attempting to get logs from cloudwatch")
+            raise CloudServerQueryError("Something went wrong on server side")
+
+        query_id = response["queryId"]
+
+        while True:
+            time.sleep(1)
+            results = self.client.get_query_results(queryId=query_id)
+            if results["status"] in [
+                "Complete",
+                "Failed",
+                "Cancelled",
+                "Timeout",
+                "Unknown",
+            ]:
+                return results.get("results", [])
+
+    def send_logs(self, logs: str) -> bool:
+        self.login()
+        response = self.client.put_log_events(
             logGroupName=self.cloudwatch_group,
             logStreamName=self.cloudwatch_stream,
             logEvents=[
                 {
-                    "timestamp": int(datetime.now().timestamp()),
+                    "timestamp": int(datetime.now().timestamp() * 1000),
                     "message": logs
                 }
             ]
