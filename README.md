@@ -63,6 +63,10 @@ I did not provide interface code itself in this README.md, for details check the
 
 
 # Testing
+Install dev dependencies first:
+```bash
+python -m pip install -r requirements_dev.txt
+```
 For testing purposes environment variables must be defined with following commands:
 ```bash
 export DOCKER_HOST=unix:///var/run/docker.sock

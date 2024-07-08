@@ -201,4 +201,3 @@ class AwsCloudWatchService(ICloudMonitoringService):
             ]
         )
         return response["ResponseMetadata"]["HTTPStatusCode"] == 200
-
