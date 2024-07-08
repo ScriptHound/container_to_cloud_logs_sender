@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from main import get_cli_arguments
+from src.main import get_cli_arguments
 from src.validation import DockerCredentials, ProgramArguments
 
 

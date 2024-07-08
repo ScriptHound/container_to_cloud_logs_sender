@@ -1,0 +1,40 @@
+# Container-to-Cloud resender utility (CCRU)
+
+This cli utility is supposed to send logs from a container to a cloud logs storage
+Main feature is that it is very easy to add support for container tool and 
+cloud logging provider of your choice
+
+# Setup
+Before starting to use this tool user have to install and set up dependencies, such
+as Docker or AWS IAM to ensure this tool is able to use them
+
+### For example, if you use docker:
+Assuming tool is running on Ubuntu, you can install docker with the following command:
+```bash
+sudo apt get install docker -y
+```
+The next step is to retrieve AWS CloudWatchLogs credentials. And then we are ready 
+to install CCRU
+# Installation
+
+local install:
+```bash
+python -m pip install -e .
+```
+
+Or from github repository:
+```bash
+python -m pip install git+https://github.com/ScriptHound/container_to_cloud_logs_sender.git
+```
+
+
+# Usage
+When all is set use the tool like that:
+```bash
+ccru --docker-image=bash:latest --bash-command="bash -c 'echo hello'" --aws-cloudwatch-group=my-post-dev-group-1 --aws-cloudwatch-stream=my-post-dev-stream-1 --aws-access-key-id=aws_id --aws-secret-key=aws_key --aws-region=us-west-2
+```
+
+Or, if you are developing the project you can start try the tool in a following manner
+```bash
+python src --docker-image=bash:latest --bash-command="bash -c 'echo hello'" --aws-cloudwatch-group=my-post-dev-group-1 --aws-cloudwatch-stream=my-post-dev-stream-1 --aws-access-key-id=aws_id --aws-secret-key=aws_key --aws-region=us-west-2
+```

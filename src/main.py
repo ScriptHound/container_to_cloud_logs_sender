@@ -37,7 +37,3 @@ def main():
     end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).timestamp()
     logs = logs_monitoring_usecase.get_logs_from_cloud(start_time, end_time)
     logging.info(logs)
-
-
-if __name__ == "__main__":
-    main()
