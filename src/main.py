@@ -32,8 +32,8 @@ def main():
     container_service = DockerDeploymentService(docker_arguments)
     logs_monitoring_usecase = AwsCloudWatchUseCase(container_service, aws_cloudwatch_service, validated_arguments)
 
-    start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).timestamp()
+    start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).timestamp()
     logs_monitoring_usecase.loop(validated_arguments.docker_image, validated_arguments.bash_command)
-    end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).timestamp()
+    end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)).timestamp()
     logs = logs_monitoring_usecase.get_logs_from_cloud(start_time, end_time)
     logging.info(logs)
