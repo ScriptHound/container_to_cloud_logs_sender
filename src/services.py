@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Generator, Optional
 
+import aioboto3
 import boto3
 import docker
 from botocore.client import BaseClient

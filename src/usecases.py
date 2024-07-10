@@ -1,3 +1,6 @@
+import logging
+import queue
+import threading
 from abc import ABC, abstractmethod
 from typing import Generator, Optional
 
@@ -29,6 +32,7 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
         self.cloud_service = cloud_service
         self.container_service = container_service
         self.arguments = arguments
+        self.queue = queue.Queue()
 
     def get_logs_from_container(self) -> Generator[bytes, None, None]:
         return self.container_service.get_logs()
@@ -42,17 +46,37 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
     def send_logs_to_cloud(self, logs: str) -> None:
         self.cloud_service.send_logs(logs)
 
+    def logging_loop(self):
+        while self.container_service.container_is_running():
+            logs_generator = self.get_logs_from_container()
+            for log in logs_generator:
+                self.queue.put(log.decode("utf-8"))
+                logging.info(f"Put logs in queue: {log}")
+
+    def sending_loop(self):
+        while self.container_service.container_is_running():
+            try:
+                log = self.queue.get()
+                success = self.cloud_service.send_logs(log)
+                logging.info(f"Sent logs to cloudwatch: {log}")
+                if not success:
+                    raise Exception("Failed to send logs to cloudwatch")
+            except queue.Empty:
+                continue
+
     def loop(self, image_name: str, bash_command: str) -> None:
         self.container_service.login()
         self.container_service.pull_image(image_name)
         self.container_service.run_container(bash_command)
 
-        while self.container_service.container_is_running():
-            logs_generator = self.get_logs_from_container()
-            for log in logs_generator:
-                success = self.cloud_service.send_logs(log.decode("utf-8"))
-                if not success:
-                    raise Exception("Failed to send logs to cloudwatch")
+        logging_thread = threading.Thread(target=self.logging_loop)
+        sending_thread = threading.Thread(target=self.sending_loop)
+
+        logging_thread.start()
+        sending_thread.start()
+
+        logging_thread.join()
+        sending_thread.join()
 
         post_mortem_logs = self.get_logs_from_container()
         for log in post_mortem_logs:
