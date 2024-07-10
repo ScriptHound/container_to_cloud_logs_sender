@@ -54,15 +54,15 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
                 logging.info(f"Put logs in queue: {log}")
 
     def sending_loop(self):
-        while self.container_service.container_is_running():
-            try:
-                log = self.queue.get()
-                success = self.cloud_service.send_logs(log)
-                logging.info(f"Sent logs to cloudwatch: {log}")
+        while not self.queue.empty() or self.container_service.container_is_running():
+            log_batch = []
+            while not self.queue.empty() or len(log_batch) > 15:
+                log_batch.append(self.queue.get())
+            if len(log_batch) > 0:
+                success = self.cloud_service.send_logs(log_batch)
+                logging.info(f"Sent logs to cloudwatch: {log_batch}")
                 if not success:
                     raise Exception("Failed to send logs to cloudwatch")
-            except queue.Empty:
-                continue
 
     def loop(self, image_name: str, bash_command: str) -> None:
         self.container_service.login()
@@ -79,5 +79,5 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
         sending_thread.join()
 
         post_mortem_logs = self.get_logs_from_container()
-        for log in post_mortem_logs:
-            self.cloud_service.send_logs(log.decode("utf-8"))
+        logs = [log.decode("utf-8") for log in post_mortem_logs]
+        self.cloud_service.send_logs(logs)

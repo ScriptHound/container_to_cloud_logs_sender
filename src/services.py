@@ -2,7 +2,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Generator, Optional
+from typing import Generator, Optional, List
 
 import aioboto3
 import boto3
@@ -119,7 +119,7 @@ class DockerDeploymentService(IContainerDeploymentService):
 class ICloudMonitoringService(ABC):
 
     @abstractmethod
-    def send_logs(self, logs: str) -> bool:
+    def send_logs(self, logs: List[str]) -> bool:
         pass
 
     # arguments really depend on concrete cloud provider
@@ -189,16 +189,14 @@ class AwsCloudWatchService(ICloudMonitoringService):
             ]:
                 return results.get("results", [])
 
-    def send_logs(self, logs: str) -> bool:
+    def send_logs(self, logs: List[str]) -> bool:
         self.login()
+        if len(logs) == 0:
+            return False
+        log_events = [{"timestamp": int(datetime.now().timestamp() * 1000), "message": log} for log in logs]
         response = self.client.put_log_events(
             logGroupName=self.cloudwatch_group,
             logStreamName=self.cloudwatch_stream,
-            logEvents=[
-                {
-                    "timestamp": int(datetime.now().timestamp() * 1000),
-                    "message": logs
-                }
-            ]
+            logEvents=log_events
         )
         return response["ResponseMetadata"]["HTTPStatusCode"] == 200
