@@ -56,7 +56,7 @@ class AwsCloudWatchUseCase(ILogsMonitoringUseCase):
     def sending_loop(self):
         while not self.queue.empty() or self.container_service.container_is_running():
             log_batch = []
-            while not self.queue.empty() or len(log_batch) > 15:
+            while not self.queue.empty() or len(log_batch) < 15:
                 log_batch.append(self.queue.get())
             if len(log_batch) > 0:
                 success = self.cloud_service.send_logs(log_batch)
