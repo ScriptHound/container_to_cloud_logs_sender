@@ -1,13 +1,14 @@
+import asyncio
+import datetime
 import logging
-import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
-from typing import Generator, Optional, List
+from typing import Generator, List, Optional
 
 import aioboto3
 import boto3
 import docker
 from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 from docker import DockerClient
 from docker.models.containers import Container
 
@@ -89,7 +90,7 @@ class DockerDeploymentService(IContainerDeploymentService):
         return str(self.container.exec_run(command))
 
     def pull_image(self, image_name: str) -> None:
-        if image_name not in [image.tags[0] for image in self.client.images.list()]:
+        if image_name not in [image.tags[0] for image in self.client.images.list() if len(image.tags) > 0]:
             logging.info(f"pulling {image_name}")
             self.client.images.pull(image_name)
         else:
@@ -98,7 +99,7 @@ class DockerDeploymentService(IContainerDeploymentService):
 
     def run_container(self, command: Optional[str] = None) -> None:
         logging.info(f"starting {self.image_name} with command {command}")
-        self.time_started = datetime.now(tz=timezone.utc)
+        self.time_started = datetime.datetime.now(tz=datetime.timezone.utc)
         self.container = self.client.containers.run(image=self.image_name, command=command or None, detach=True)
 
     def get_logs(self) -> Generator[bytes, None, None]:
@@ -125,6 +126,18 @@ class ICloudMonitoringService(ABC):
     # arguments really depend on concrete cloud provider
     @abstractmethod
     def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
+        pass
+
+
+class IAsyncCloudMonitoringService(ABC):
+
+    @abstractmethod
+    async def send_logs(self, logs: List[str]) -> bool:
+        pass
+
+    # arguments really depend on concrete cloud provider
+    @abstractmethod
+    async def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
         pass
 
 
@@ -178,7 +191,6 @@ class AwsCloudWatchService(ICloudMonitoringService):
         query_id = response["queryId"]
 
         while True:
-            time.sleep(1)
             results = self.client.get_query_results(queryId=query_id)
             if results["status"] in [
                 "Complete",
@@ -193,10 +205,109 @@ class AwsCloudWatchService(ICloudMonitoringService):
         self.login()
         if len(logs) == 0:
             return False
-        log_events = [{"timestamp": int(datetime.now().timestamp() * 1000), "message": log} for log in logs]
+        log_events = [{"timestamp": int(datetime.datetime.now().timestamp() * 1000), "message": log} for log in logs]
         response = self.client.put_log_events(
             logGroupName=self.cloudwatch_group,
             logStreamName=self.cloudwatch_stream,
             logEvents=log_events
         )
         return response["ResponseMetadata"]["HTTPStatusCode"] == 200
+
+
+class AsyncAwsCloudWatchService(IAsyncCloudMonitoringService):
+    def __init__(self, arguments: ProgramArguments):
+        self.aws_access_key_id = arguments.aws_access_key_id
+        self.aws_secret_key = arguments.aws_secret_key
+        self.aws_region = arguments.aws_region
+        self.cloudwatch_group = arguments.aws_cloudwatch_group
+        self.cloudwatch_stream = arguments.aws_cloudwatch_stream
+        self.client: Optional[BaseClient] = None
+        self.session: Optional[aioboto3.Session] = None
+
+    async def login(self):
+        self.session = aioboto3.Session()
+        async with self.session.client(
+                "logs",
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_key,
+                region_name=self.aws_region
+        ) as client:
+            if not (await client.describe_log_groups(logGroupNamePrefix=self.cloudwatch_group))["logGroups"]:
+                await client.create_log_group(logGroupName=self.cloudwatch_group)
+
+            if not (await client.describe_log_streams(
+                    logGroupName=self.cloudwatch_group,
+                    logStreamNamePrefix=self.cloudwatch_stream))["logStreams"]:
+                await client.create_log_stream(logGroupName=self.cloudwatch_group, logStreamName=self.cloudwatch_stream)
+
+    async def get_logs(self, start_time: int, end_time: int, max_logs: Optional[int] = 100) -> str:
+        await self.login()
+        async with self.session.client(
+            "logs",
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_key,
+            region_name=self.aws_region
+        ) as client:
+            response = await client.start_query(
+                logGroupName=self.cloudwatch_group,
+                queryString="fields @timestamp, @message | sort @timestamp asc",
+                limit=max_logs,
+                startTime=start_time,
+                endTime=end_time
+            )
+
+            if response["ResponseMetadata"]["HTTPStatusCode"] // 100 == 4:
+                logging.error("Client side error while attempting to get logs from cloudwatch")
+                raise CloudClientQueryError("Something went wrong on client side")
+            elif response["ResponseMetadata"]["HTTPStatusCode"] // 100 == 5:
+                logging.error("Server side error while attempting to get logs from cloudwatch")
+                raise CloudServerQueryError("Something went wrong on server side")
+
+            query_id = response["queryId"]
+
+            while True:
+                try:
+                    results = await client.get_query_results(queryId=query_id)
+                    if results["status"] in [
+                        "Complete",
+                        "Failed",
+                        "Cancelled",
+                        "Timeout",
+                        "Unknown",
+                    ]:
+                        return results.get("results", [])
+                except ClientError:
+                    await asyncio.sleep(0.5)
+
+    async def send_logs(self, logs: List[str]) -> bool:
+        await self.login()
+        async with self.session.client(
+            "logs",
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_key,
+            region_name=self.aws_region
+        ) as client:
+            response = await client.describe_log_streams(
+                logGroupName=self.cloudwatch_group,
+                logStreamNamePrefix=self.cloudwatch_stream,
+            )
+
+            next_token = (
+                response["logStreams"][0].get("uploadSequenceToken") if response["logStreams"] else None
+            )
+
+            logs_with_datestamp = [{"message": log, "timestamp": int(datetime.datetime.now().timestamp() * 1000)} for log in logs]
+
+            start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).timestamp()
+            logging.info(logs_with_datestamp)
+            response = await client.put_log_events(
+                logGroupName=self.cloudwatch_group,
+                logStreamName=self.cloudwatch_stream,
+                logEvents=logs_with_datestamp,
+                sequenceToken=next_token,
+            )
+            logging.info(response)
+            end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)).timestamp()
+            result_log = await self.get_logs(int(start_time * 1000), int(end_time * 1000))
+            logging.info(result_log)
+        return True

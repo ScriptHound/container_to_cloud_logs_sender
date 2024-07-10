@@ -5,6 +5,7 @@ BASE_DEPS = (
     "boto3==1.34.139",
     "botocore==1.34.139",
     "pydantic==2.8.2",
+    "aioboto3==13.1.1"
 )
 
 setup(

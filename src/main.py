@@ -1,9 +1,10 @@
 import argparse
+import asyncio
 import datetime
 import logging
 
-from src.services import AwsCloudWatchService, DockerDeploymentService
-from src.usecases import AwsCloudWatchUseCase
+from src.services import AsyncAwsCloudWatchService, DockerDeploymentService
+from src.usecases import AsyncAwsLogsUseCase
 from src.validation import DockerCredentials, ProgramArguments
 
 
@@ -28,12 +29,11 @@ def main():
     validated_arguments = ProgramArguments(**vars(arguments))
     docker_arguments = DockerCredentials(**vars(arguments))
 
-    aws_cloudwatch_service = AwsCloudWatchService(validated_arguments)
+    aws_cloudwatch_service = AsyncAwsCloudWatchService(validated_arguments)
     container_service = DockerDeploymentService(docker_arguments)
-    logs_monitoring_usecase = AwsCloudWatchUseCase(container_service, aws_cloudwatch_service, validated_arguments)
+    logs_monitoring_usecase = AsyncAwsLogsUseCase(container_service, aws_cloudwatch_service, validated_arguments)
 
     start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).timestamp()
-    logs_monitoring_usecase.loop(validated_arguments.docker_image, validated_arguments.bash_command)
+    loop_coro = logs_monitoring_usecase.loop(validated_arguments.docker_image, validated_arguments.bash_command)
+    asyncio.run(loop_coro)
     end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)).timestamp()
-    logs = logs_monitoring_usecase.get_logs_from_cloud(start_time, end_time)
-    logging.info(logs)
