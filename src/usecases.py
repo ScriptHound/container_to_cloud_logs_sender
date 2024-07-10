@@ -105,7 +105,6 @@ class AsyncAwsLogsUseCase(ILogsMonitoringUseCase):
 
     async def send_logs_to_cloud(self, logs: List[str]) -> None:
         async with self.semafore:
-            logging.info(logs)
             await self.cloud_service.send_logs(logs)
 
     async def run_bash_command_on_container(self, bash_command: str) -> str:
@@ -119,7 +118,6 @@ class AsyncAwsLogsUseCase(ILogsMonitoringUseCase):
             logs_generator = self.container_service.get_logs()
             for log in logs_generator:
                 if log is not None:
-                    logging.info(log)
                     self.queue.put(log.decode("utf-8"))
 
     async def sending_loop(self):

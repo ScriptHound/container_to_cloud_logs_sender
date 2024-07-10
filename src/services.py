@@ -298,8 +298,7 @@ class AsyncAwsCloudWatchService(IAsyncCloudMonitoringService):
 
             logs_with_datestamp = [{"message": log, "timestamp": int(datetime.datetime.now().timestamp() * 1000)} for log in logs]
 
-            start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).timestamp()
-            logging.info(logs_with_datestamp)
+            # start_time = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)).timestamp()
             response = await client.put_log_events(
                 logGroupName=self.cloudwatch_group,
                 logStreamName=self.cloudwatch_stream,
@@ -307,7 +306,6 @@ class AsyncAwsCloudWatchService(IAsyncCloudMonitoringService):
                 sequenceToken=next_token,
             )
             logging.info(response)
-            end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)).timestamp()
-            result_log = await self.get_logs(int(start_time * 1000), int(end_time * 1000))
-            logging.info(result_log)
+            # end_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)).timestamp()
+            # result_log = await self.get_logs(int(start_time * 1000), int(end_time * 1000))
         return True
